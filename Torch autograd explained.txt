@@ -1,0 +1,27 @@
+Autograd - reverse automatic differentiation. Records a graph of all operations creating data, 
+giving a DAG whose leaves are input tensors, roots output tensors. Trace the graph from roots to leaves, 
+compute gradients with chain rule. 
+
+Graph - graph of Function objects, apply() ed to compute the result of eval graph. 
+When computing forward pass, autograd performs computation AND builds graph representing Functionthat computes the gradient. .grad_fn attribute of each tensor. 
+Evaluate graph in backwards pass to get gradients. 
+Graph recreated each iteration. 
+
+
+Some ops need intermediary results to be saved during forward pass. 
+
+torch.autograd.Function: class to make torch function with forward pass and backward(). Call apply, saveForbackwardetc. 
+Defining custom python Function: use save_for_backward() to save tensors in forward pass
+saved_tensors - get tensors saved during backwards pass. 
+
+PyTorch ops - automatically save tensors. 
+
+Gradients not differentiable - deals with it. 
+Disabling gradient computation: 
+    Context managers, like no_grad mode. Or, requires grad field of tensor.
+requires_grad - flag, default false. Forward pass -op only recorded if at least one of input saved_tensors
+require grad. Backward - only leaf tensors with True will have gradients in their .grad fields. 
+
+setting this flag only makes sensefor leaf tensors - ex: nn.Module parameter. 
+
+freeze parts of model - apply .requires_grad_(False)
