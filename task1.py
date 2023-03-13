@@ -132,7 +132,7 @@ def tutorialClip():
     #picks top k probabilities/labels. 
     top_probs, top_labels = text_probs.cpu().topk(5, dim=-1)
     #graph results. 
-    graphClassifications(cifar100, original_images, top_probs, top_labels)
+    graphClassifications(cifar100.classes, original_images, top_probs, top_labels)
    
 def task1():
     """
@@ -228,7 +228,7 @@ def calcAccuracy(predictions, labels):
     equalArray = labels.cpu() == guesses
     percentEqual = torch.mean(equalArray.float())
     return percentEqual
-def graphClassifications(cifar, original_images, top_probs, top_labels):
+def graphClassifications(labels, original_images, top_probs, top_labels):
     plt.figure(figsize=(16, 16))
 
     for i, image in enumerate(original_images):
@@ -242,9 +242,9 @@ def graphClassifications(cifar, original_images, top_probs, top_labels):
         plt.barh(y, top_probs[i])
         plt.gca().invert_yaxis()
         plt.gca().set_axisbelow(True)
-        plt.yticks(y, [cifar.classes[index] for index in top_labels[i].numpy()])
+        plt.yticks(y, [labels[index] for index in top_labels[i].numpy()])
         plt.xlabel("probability")
 
     plt.subplots_adjust(wspace=0.5)
     plt.show()
-task1()
+#task1()

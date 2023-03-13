@@ -1,0 +1,7 @@
+
+
+
+To get a list of objects, will take a histogram of all the captions of the flickr dataset and pick the nouns off of it. Use NN for nouns? 
+Want to somehow assign so that words that mean the same thing aren't BOTH given teh same classification. Like woman and girl.
+
+For now, just pick all the classes above a certain threshold. 
