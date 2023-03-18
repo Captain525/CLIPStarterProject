@@ -4,6 +4,7 @@ import clip
 from PIL import Image
 import torch
 from task1 import graphClassifications
+import matplotlib.pyplot as plt
 
 
 def task3():
@@ -48,7 +49,8 @@ def task3():
     # net similarity between all types of objects, so that we pick those that stnad out from eachother but are most prominent. 
     model, preprocess = clip.load("ViT-B/32")
     images = loadImages(100, preprocess)
-    objectList = loadObjects()
+    objectList, dictTransform = loadObjects()
+    numberClasses = range(0, len(objectList))
     #use these as potential captions to get the images from. Same as in task1.
     text_descriptions = [f"This is a photo of a {object}" for object in objectList]
 
@@ -65,43 +67,73 @@ def task3():
     top_probs, top_labels = text_probs.cpu().topk(k, dim=-1)
     print(text_probs)
     numGraphing = 6
+    classificationArray, imageObjectLists = getObjectsForImages(text_probs, dictTransform)
+    #make the list of numbers representing objects back into the objects themselves. 
+    print("classification array: ", imageObjectLists[0:numGraphing])
     graphClassifications(objectList, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy(), top_probs, top_labels)
-
-
-def getObjectsForImages(text_probs):
+    displayImageWithCategories(imageObjectLists, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy())
+    
+def getObjectsForImages(text_probs, objectDictionary):
     """
     From these probabilities, pick which classes are represented.
     Look at ratios? 
-
-    SLOW but whatever, workign on it right now. 
+    
+    Works faster now, the meat of it makes sense, but the actual details of the implementation an dhow i choose the top k objects
+    depends. 
     """
     listClassification = []
-    for imageIndex in range(text_probs.shape[0]):
-        rowProb = text_probs[imageIndex, :]
-        sortedTopLow = np.argsort(rowProb)[::-1]
-        inversePerm = np.zeros(shape =(sortedTopLow.shape[0],))
-        inversePerm[sortedTopLow] = np.arange(sortedTopLow.shape[0],)
-        sortedProbs = rowProb[sortedTopLow]
+    listObjectLists = []
+    print("text probs shape:", text_probs.shape)
+    n = text_probs.shape[0]
+    sortedTopLow = torch.argsort(text_probs, axis=-1)
+    print(sortedTopLow.dtype)
+    inversePerm = torch.zeros(sortedTopLow.shape, dtype = torch.int64)
+    print("inverse perm shape: ", inversePerm.shape)
+    print("shape is: ", (torch.arange(sortedTopLow.shape[1]).repeat(n,1)).shape)
+    #this is the form it was in in the 1d case. 
+    print("sorted top low shape: ", sortedTopLow.shape)
+    #print("inversePerm sortedTopLow shape: ", inversePerm[:, sortedTopLow].shape)
+    inversePerm[torch.arange(n)[:, None], sortedTopLow] = torch.arange(sortedTopLow.shape[1]).repeat(n,1).type(torch.int64)
+    print("check that what it's doing is right", inversePerm[torch.arange(n)[:, None], sortedTopLow.cpu()])
+    print("inverse perm shape: ", inversePerm.shape)
+    #None basically expand dims. 
+    sortedProbabilities = text_probs[torch.arange(n)[:, None], sortedTopLow]
+    print("sorted prob row: ", sortedProbabilities[0])
+    print("sorted probs shape: ", sortedProbabilities.shape)
+    rolledProbs = torch.roll(sortedProbabilities, 1, -1)
+    print("rolled prob shape: ", rolledProbs.shape)
+    ratioTensor = sortedProbabilities/rolledProbs
+    print("ratio shape: ", ratioTensor.shape)
+    cutoffNum = torch.argmax(ratioTensor[:, 1:], axis=-1)#+ torch.ones(ratioTensor.shape[0])
+    print("cutoff shape: ", cutoffNum.shape)
+    print("correct shape: ", sortedProbabilities[torch.arange(n), cutoffNum].shape)
+    boolClass = (sortedProbabilities >= (sortedProbabilities[torch.arange(n), cutoffNum])[:, None])
+    print(boolClass)
+    classificationTensor = boolClass[torch.arange(n)[:, None], inversePerm]
+    print("class tensor: ", classificationTensor)
+    print("class tensor shape: ", classificationTensor.shape)
+    nonzero = torch.nonzero(classificationTensor)
+    print("nonzero shape: ", nonzero.shape)
+    numberOfEach = torch.bincount(nonzero[:, 0]).cpu()
+    print("number of each: ", numberOfEach)
+    print("number of each shape: ", numberOfEach.shape)
+    assert(torch.sum(numberOfEach) == nonzero.shape[0])
+    cumSumNum = torch.cumsum(numberOfEach, 0)
+    print(cumSumNum)
+    print(cumSumNum.shape)
+    listOfIndividualTensors = torch.tensor_split(nonzero, cumSumNum,dim = 0)
+   
+    chosenObjects = [list(map(objectDictionary.get, tensor[:, 1].tolist()))for tensor in listOfIndividualTensors]
+    print(chosenObjects)
+    """
+    Difference approach: 
+    #first index will be an-a1 which is negative of the total difference. 
+    differenceVector = rolledProbs - sortedProbs
+    percentChange = differenceVector/(-differenceVector[0])
+    roght now, just do the same cutoffnumber with the argmax. 
 
-        """
-        RATIO APPROACH: 
-        """
-        rolledProbs = np.roll(sortedProbs, 1)
-        assert(rolledProbs[0] == sortedProbs[-1])
-        ratioVector = sortedProbs/rolledProbs
-        cutoffNumber = np.argmax(ratioVector[1:]) +1
-        boolClass = (sortedProbs>=sortedProbs[cutoffNumber-1]).astype(int)
-        classificationVector = boolClass[inversePerm]
-        listClassification.append(classificationVector)
-        """
-        Difference approach: 
-        #first index will be an-a1 which is negative of the total difference. 
-        differenceVector = rolledProbs - sortedProbs
-        percentChange = differenceVector/(-differenceVector[0])
-        roght now, just do the same cutoffnumber with the argmax. 
-
-        """
-    return np.stack(listClassification, int)
+    """
+    return classificationTensor, chosenObjects
 
 def loadImages(number,preprocess):
     with open("Text/Flickr_8k.testImages.txt") as f:
@@ -118,6 +150,26 @@ def loadImages(number,preprocess):
         imageValue = Image.open(path).convert("RGB")
         imageList.append(preprocess(imageValue))
     return imageList
+def displayImageWithCategories(imageObjectLists, image_input):
+    """
+    Given lists of classification for each image, display the image and the list. 
+    """
+    plt.figure(figsize=(16, 16))
+
+    for i, image in enumerate(image_input):
+        plt.subplot(4, 4, 2 * i + 1)
+        plt.imshow(image)
+        plt.subplot(4,4,2*i + 2)
+        plt.text(0, 0, listMake(imageObjectLists[i]))
+
+
+    plt.subplots_adjust(wspace=0.5)
+    plt.show()
+def listMake(listStrings):
+    str = ""
+    for string in listStrings:
+        str+=(string + ", ")
+    return str
 def getObjects():
     """
     Get the list of objects from the flickr dataset. 
@@ -148,6 +200,8 @@ def loadObjects():
         listLines = f.readlines()
         listObjects = [word.strip() for word in listLines]
         print(listObjects)
-
-    return listObjects
+    rangeValues = range(0, len(listObjects))
+    assert(len(rangeValues) == len(listObjects))
+    dictTransform = dict(zip(rangeValues, listObjects))
+    return listObjects, dictTransform
 task3()
