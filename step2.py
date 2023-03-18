@@ -62,17 +62,52 @@ def task3():
         text_features/= text_features.norm(dim = -1, keepdim=True)
         image_features /=image_features.norm(dim = -1, keepdim = True)
     #100 is a temperature parameter. 
-    text_probs = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-    k = 5
-    top_probs, top_labels = text_probs.cpu().topk(k, dim=-1)
-    print(text_probs)
+    text_values = image_features@text_features.T
+    #text_probs = (100.0 * text_values).softmax(dim=-1)
+    #k = 5
+    #should already be roughly between 0 and 1, bc 1 is a perfect match. 
+    threshold = .8
+    print(torch.mean(text_values))
+    chosenObjectsThreshold = objectsThresholding(text_values, threshold, dictTransform)
+    #top_probs, top_labels = text_probs.cpu().topk(k, dim=-1)
+    #print(text_probs)
     numGraphing = 6
-    classificationArray, imageObjectLists = getObjectsForImages(text_probs, dictTransform)
+    #classificationArray, imageObjectLists = getObjectsForImages(text_probs, dictTransform)
     #make the list of numbers representing objects back into the objects themselves. 
-    print("classification array: ", imageObjectLists[0:numGraphing])
-    graphClassifications(objectList, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy(), top_probs, top_labels)
-    displayImageWithCategories(imageObjectLists, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy())
+    #print("classification array: ", imageObjectLists[0:numGraphing])
+   # graphClassifications(objectList, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy(), top_probs, top_labels)
+    displayImageWithCategories(chosenObjectsThreshold, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy())
     
+
+
+def objectsThresholding(text_values, threshold, objectDictionary):
+    """
+    Uses thresholding mechanic to choose the classes of an object. Takes in the raw text values rather than the softmax ones. 
+
+    THRESHOLD = .8 gets pretty good results. 
+    """
+    #print("text values: ", text_values)
+    maxValues = torch.max(text_values, dim=-1)[0]
+    #print(maxValues)
+    minValues = torch.min(text_values, dim=-1)[0]
+    #normalization technique where they're normalized from 0 to 1, but ONLY depend on the max and min, and not the distribution. 
+    normalizedValues = (text_values - minValues[:, None])/(maxValues[:, None] - minValues[:, None])
+    #print(normalizedValues)
+    chooseObject = normalizedValues>=threshold
+    #print("choose object:", chooseObject)
+    nonzero = torch.nonzero(chooseObject)
+    #print("nonzero shape: ", nonzero.shape)
+    numberOfEach = torch.bincount(nonzero[:, 0]).cpu()
+    #print("number of each: ", numberOfEach)
+    #print("number of each shape: ", numberOfEach.shape)
+    assert(torch.sum(numberOfEach) == nonzero.shape[0])
+    cumSumNum = torch.cumsum(numberOfEach, 0)
+    #print(cumSumNum)
+    #print(cumSumNum.shape)
+    listOfIndividualTensors = torch.tensor_split(nonzero, cumSumNum,dim = 0)
+   
+    chosenObjects = [list(map(objectDictionary.get, tensor[:, 1].tolist()))for tensor in listOfIndividualTensors]
+    return chosenObjects
 def getObjectsForImages(text_probs, objectDictionary):
     """
     From these probabilities, pick which classes are represented.
