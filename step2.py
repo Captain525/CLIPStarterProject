@@ -1,10 +1,57 @@
 import numpy as np
 from matplotlib import image
+import torch
 import clip
 from PIL import Image
-import torch
+
 from task1 import graphClassifications
 import matplotlib.pyplot as plt
+
+
+import openai
+from gpt import GPT, set_openai_key, Example
+def pipeline():
+    model, preprocess = clip.load("ViT-B/32")
+    images = loadImages(100, preprocess)
+    objectList, dictTransform = loadObjects()
+    api_key = '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'
+    openai.api_key = api_key
+    
+    gpt = GPT(engine = "davinci", temperature = .5, max_tokens = 100)
+    feedTrainingExamples(gpt, objectList, 5)
+    text_descriptions = [f"This is a photo of a {object}" for object in objectList]
+
+    image_input = torch.tensor(np.stack(images)).cuda()
+    text_tokens = clip.tokenize(text_descriptions).cuda()
+    with torch.no_grad():
+        image_features = model.encode_image(image_input).float()
+        text_features = model.encode_text(text_tokens).float()
+        text_features/= text_features.norm(dim = -1, keepdim=True)
+        image_features /=image_features.norm(dim = -1, keepdim = True)
+    #100 is a temperature parameter. 
+    text_values = image_features@text_features.T
+    #should already be roughly between 0 and 1, bc 1 is a perfect match. 
+    print(text_values[0])
+    threshold = .9
+    print(torch.mean(text_values))
+    chosenObjectsThreshold, stringObjectsList = objectsThresholding(text_values, threshold, dictTransform)
+    #use a threshold value around .25
+    #chosenObjectsThreshold, stringObjectsList = objectThresholdSimple(text_values, threshold, dictTransform)
+    print(stringObjectsList)
+    numGraphing = 10
+   
+    captionList = []
+    for stringObject in stringObjectsList[0:numGraphing]:
+        captionList.append(gpt.get_top_reply(stringObject).replace("output:", "").replace("\n", ""))
+    imageInputPermute = image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy()
+    chosenObjectsThresholdGraph = chosenObjectsThreshold[0:numGraphing]
+    for i in range (0, numGraphing):
+        plt.imshow(imageInputPermute[i])
+        plt.text(0,0, stringObjectsList[i])
+        plt.figtext(0,0,captionList[i])
+        plt.show()
+
+    #displayImageWithCategories(chosenObjectsThreshold, image_input[0:6].permute(0,2,3,1).cpu().numpy())
 
 
 def task3():
@@ -26,21 +73,6 @@ def task3():
     and summarize your qualitative observations. Are you happy with what you got?
     If not, are there things you would like to try to improve the quality of image captions,
     or do you think there are fundamental limitations on the way we compose CLIP and GPT-3 models?
-    
-    Task 6: Run your pipeline on at least 500 images from the validation / test set of Flickr 8k, 
-    and compute at least one quantitative metric of your choice.
-    How does your result compare with the previously published results on Flickr 8k image captioning? 
-    Do you find tweaking the list of objects (for CLIP) or the in-context examples (for GPT-3) make any quantitative differences?
-
-    
-    Now that we have built a quantitative evaluation pipeline, we can try to improve the models and see if they lead to quantitative improvements. 
-    This step is completely open-ended, but a few options are available for your consideration: (1) Leverage CLIP image embeddings,
-    for example by training an RNN / Transformer decoder (recall your deep learning homework) for image captioning. 
-    You can use the training split of Flickr 8k for this purpose; 
-    (2) Turn the image captioning framework from Step 2 into a visual question answering model. 
-    You should be able to achieve this by tweaking the in-context examples for GPT-3. 
-    You are encouraged to perform quantitative evaluations, but qualitative evaluations are also okay.
-    Task 7: Pick one of the options above or use your imagination to explore something new (e.g. replace GPT-3 with ChatGPT).
 
 
     """
@@ -63,51 +95,123 @@ def task3():
         image_features /=image_features.norm(dim = -1, keepdim = True)
     #100 is a temperature parameter. 
     text_values = image_features@text_features.T
-    #text_probs = (100.0 * text_values).softmax(dim=-1)
-    #k = 5
     #should already be roughly between 0 and 1, bc 1 is a perfect match. 
-    threshold = .8
+    threshold = .85
     print(torch.mean(text_values))
-    chosenObjectsThreshold = objectsThresholding(text_values, threshold, dictTransform)
-    #top_probs, top_labels = text_probs.cpu().topk(k, dim=-1)
-    #print(text_probs)
+    chosenObjectsThreshold, stringObjectsList = objectsThresholding(text_values, threshold, dictTransform)
     numGraphing = 6
-    #classificationArray, imageObjectLists = getObjectsForImages(text_probs, dictTransform)
-    #make the list of numbers representing objects back into the objects themselves. 
-    #print("classification array: ", imageObjectLists[0:numGraphing])
-   # graphClassifications(objectList, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy(), top_probs, top_labels)
-    displayImageWithCategories(chosenObjectsThreshold, image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy())
     
+    imageInputPermute = image_input[0:numGraphing].permute(0,2,3,1).cpu().numpy()
+    chosenObjectsThresholdGraph = chosenObjectsThreshold[0:numGraphing]
+    print(len(chosenObjectsThreshold))
+    for i in range (0, numGraphing):
+        plt.imshow(imageInputPermute[i])
+        plt.text(0,0, stringObjectsList[i])
+        plt.show()
 
+    #displayImageWithCategories(chosenObjectsThreshold, imageInputPermute)
+    return
+def task4():
+    api_key = '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'
+    openai.api_key = api_key
+    
+    objectList = ["boat, water, person"]
+
+    openai.FineTune.list() 
+    prompt = "cat, mouse, cheese, person"
+    gpt = GPT(engine = "davinci", temperature = .5, max_tokens = 100)
+    set_openai_key(api_key)
+    print("top reply here: \n")
+    print(gpt.get_top_reply(prompt))
+    gpt.add_example((Example('cat', 'The cat looks cute.')))
+    gpt.add_example((Example('cat, dog', 'The cat is playing with a black dog')))
+    gpt.add_example(Example('cat, dog, mouse', 'The cat is trying to catch a mouse, and the dog watches.'))
+    gpt.add_example(Example('mouse, cheese', 'The cute mouse carries a piece of cheese with its arms.'))
+    print(gpt.get_top_reply(prompt))
+    feedTrainingExamples(gpt, objectList,50)
+
+
+
+    print(gpt.get_top_reply(prompt))
+    return 
+
+
+
+def feedTrainingExamples(gpt, objectList, numExamples):
+    with open("Text/Flickr8k.token.txt") as f:
+        lines = f.readlines()
+        indices = np.random.randint(0, len(lines), numExamples, dtype = int)
+        for i in indices:
+            line = lines[i]
+            objectsInLine = ""
+            index = line.find("#")+3
+            #print(line[index:])
+            for object in objectList:
+                if object in line:
+                    objectsInLine += object
+            gpt.add_example(Example(objectsInLine, line[index:].replace("\n", "")))
 
 def objectsThresholding(text_values, threshold, objectDictionary):
     """
     Uses thresholding mechanic to choose the classes of an object. Takes in the raw text values rather than the softmax ones. 
-
+    However, it does this by normalizing from 0 to 1 based on the min and max of each vector. 
     THRESHOLD = .8 gets pretty good results. 
     """
-    #print("text values: ", text_values)
+
     maxValues = torch.max(text_values, dim=-1)[0]
-    #print(maxValues)
+
     minValues = torch.min(text_values, dim=-1)[0]
     #normalization technique where they're normalized from 0 to 1, but ONLY depend on the max and min, and not the distribution. 
     normalizedValues = (text_values - minValues[:, None])/(maxValues[:, None] - minValues[:, None])
-    #print(normalizedValues)
+
     chooseObject = normalizedValues>=threshold
-    #print("choose object:", chooseObject)
+
     nonzero = torch.nonzero(chooseObject)
-    #print("nonzero shape: ", nonzero.shape)
+  
     numberOfEach = torch.bincount(nonzero[:, 0]).cpu()
-    #print("number of each: ", numberOfEach)
-    #print("number of each shape: ", numberOfEach.shape)
+   
     assert(torch.sum(numberOfEach) == nonzero.shape[0])
     cumSumNum = torch.cumsum(numberOfEach, 0)
-    #print(cumSumNum)
-    #print(cumSumNum.shape)
+
     listOfIndividualTensors = torch.tensor_split(nonzero, cumSumNum,dim = 0)
    
     chosenObjects = [list(map(objectDictionary.get, tensor[:, 1].tolist()))for tensor in listOfIndividualTensors]
-    return chosenObjects
+    stringObjectList=[]
+    for objectList in chosenObjects:
+        stringObjects = ""
+        for object in objectList:
+            stringObjects+=object + ", "
+        stringObjectList.append(stringObjects[:-2])
+    
+    return chosenObjects, stringObjectList
+
+def objectThresholdSimple(text_values, threshold, dictTransform):
+    """
+    Absolute thresholding based on cosine similarity. 
+    """
+    chooseObject = text_values>=threshold
+    nonzero = torch.nonzero(chooseObject)
+  
+    numberOfEach = torch.bincount(nonzero[:, 0]).cpu()
+   
+    assert(torch.sum(numberOfEach) == nonzero.shape[0])
+    cumSumNum = torch.cumsum(numberOfEach, 0)
+
+    listOfIndividualTensors = torch.tensor_split(nonzero, cumSumNum,dim = 0)
+    chosenObjects = [list(map(dictTransform.get, tensor[:, 1].tolist()))for tensor in listOfIndividualTensors]
+    stringObjectList=[]
+    for objectList in chosenObjects:
+        stringObjects = ""
+        for object in objectList:
+            stringObjects+=object + ", "
+        stringObjectList.append(stringObjects[:-2])
+    
+    return chosenObjects, stringObjectList
+
+
+
+
+
 def getObjectsForImages(text_probs, objectDictionary):
     """
     From these probabilities, pick which classes are represented.
@@ -239,4 +343,4 @@ def loadObjects():
     assert(len(rangeValues) == len(listObjects))
     dictTransform = dict(zip(rangeValues, listObjects))
     return listObjects, dictTransform
-task3()
+pipeline()

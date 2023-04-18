@@ -18,6 +18,9 @@ import torchvision
 from torchvision.datasets import CIFAR100, CIFAR10
 
 def tutorialClip():
+    """
+    Does the tutorial of clip from the jupyter notebook. 
+    """
     #unsafe but fixes problem with numpy and mkl. 
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
     print("torch version", torch.__version__)
@@ -84,7 +87,7 @@ def tutorialClip():
     text_tokens = clip.tokenize(["This is " + desc for desc in texts]).cuda()
     #requires_grad - variable when making tensors, stating whether we need the gradient. 
     #disables gradient calculation, makes all computations not calculate gradient. 
-    #EVEN IF HT EINPUT HAS REQUIRES GRAD TRUE, this call makes it false. 
+    #EVEN IF THE INPUT HAS REQUIRES GRAD TRUE, this call makes it false. 
     #use vision transformer/ text transformer. 
     with torch.no_grad():
         image_features = model.encode_image(image_input).float()
@@ -158,8 +161,6 @@ def task1():
     #can't slice into a dataset as you normally would a numpy array. 
     subsetTest = torch.utils.data.Subset(cifar, numExamples)
     dataLoader = torch.utils.data.DataLoader(subsetTest, batch_size =len(subsetTest))
-    #gets the entire dataset of size 500, with each being an image. Want to preprocess this as well. NOt sure if this is right. 
-    #imageTensor = next(iter(dataLoader))[0].cuda()
     
     print(subsetTest[1][1])
     print("max value in tensor: ", torch.max(subsetTest[1][0]))
@@ -188,21 +189,11 @@ def task1():
     text_probs = (100.0 * image_features @ text_features.T).softmax(dim=-1)
     assert(text_probs.shape == (500, 10))
     top_probs, top_labels = text_probs.cpu().topk(5, dim=-1)
+    
     numGraphing = 6
     graphClassifications(cifar, image_input[0:numGraphing].permute(0, 2,3,1).cpu().numpy(), top_probs[0:numGraphing], top_labels[0:numGraphing])
-
-
-    #calculate the loss as an L2 calculation with one hot values. 
-    encodedLabels = torch.nn.functional.one_hot(labels, num_classes = 10).cpu().float()
-    print("encoded label size: ", encodedLabels.shape)
-    print("text probs size: ", text_probs.cpu().shape)
-    loss = torch.nn.CrossEntropyLoss(reduction = "mean")
-    print(text_probs.cpu()[0:10].numpy())
-    print(encodedLabels.cpu()[0:10])
-    #they use softmax again I think. 
-    lossValue = loss(text_probs.cpu(), labels.cpu())
+   
     ceLoss = catCE(text_probs, labels)
-    print("loss value was: ", lossValue)
     print("ce loss was: ", ceLoss)
     accuracy = calcAccuracy(text_probs, labels)
     print("accuracy is: ", accuracy)
@@ -247,4 +238,3 @@ def graphClassifications(labels, original_images, top_probs, top_labels):
 
     plt.subplots_adjust(wspace=0.5)
     plt.show()
-#task1()

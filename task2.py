@@ -128,20 +128,15 @@ def trainEpoch(loader,  optimizer, model, lossFxn):
 class ImageClassifier(torch.nn.Module):
     def __init__(self, encodingSize):
         super(ImageClassifier, self).__init__()
-        hidden1 = 100
-        hidden2 = 50
-        self.linear1 = torch.nn.Linear(encodingSize, hidden2).cuda()
-        #self.linear2 = torch.nn.Linear(hidden1, hidden2).cuda()
-        self.linear3 = torch.nn.Linear(hidden2, 10).cuda()
+        #only need 1 linear layer because matrix multiplication causes multiple
+        #to reduce to one. 
+        self.linear1 = torch.nn.Linear(encodingSize, 10).cuda()
+        
 
 
     def forward(self, x):
-        x = torch.nn.functional.relu(self.linear1(x))
-        #print("x shape after first linear: ", x.shape)
-        #x = torch.nn.functional.relu(self.linear2(x))
-        #print("x shape after 2nd linear: ", x.shape)
-        x = torch.nn.functional.softmax(self.linear3(x))
-        #print("x shape output: ", x.shape)
+        #one linear layer, then softmax to get the probabilities. 
+        x = torch.nn.functional.softmax(self.linear1(x))
         return x
 def catCE(probabilities, labels):
     """
@@ -154,7 +149,7 @@ def catCE(probabilities, labels):
     logProbs = -1* torch.log(probabilities.cpu())
 
     ceVals = torch.diag(logProbs@encodedLabels.T)
-    #print("ce vals: ", ceVals)
+ 
     avgCE = torch.mean(ceVals)
     return avgCE
 def calcAccuracy(predictions, labels):
@@ -163,4 +158,3 @@ def calcAccuracy(predictions, labels):
     equalArray = labels.cpu() == guesses
     percentEqual = torch.mean(equalArray.float())
     return percentEqual
-task2()
